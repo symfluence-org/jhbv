@@ -356,14 +356,15 @@ class HBVWorker(InMemoryModelWorker):
         # Enforce recession coefficient ordering: k0 > k1 > k2
         # This is a physical constraint — fast flow must recede faster than
         # interflow, which must recede faster than baseflow.
+        # Sort the sampled values to satisfy the constraint rather than rejecting,
+        # so that optimizers (PSO, DDS, etc.) can explore the full parameter space.
         k0 = params.get('k0', 0.3)
         k1 = params.get('k1', 0.1)
         k2 = params.get('k2', 0.01)
         if not (k0 > k1 > k2):
-            raise ValueError(
-                f"Recession ordering violated: k0={k0:.4f}, k1={k1:.4f}, k2={k2:.4f} "
-                f"(require k0 > k1 > k2)"
-            )
+            sorted_k = sorted([k0, k1, k2], reverse=True)
+            params = dict(params)  # avoid mutating caller's dict
+            params['k0'], params['k1'], params['k2'] = sorted_k
 
         if not self._ensure_simulate_fn():
             raise RuntimeError("HBV simulation function not available")
