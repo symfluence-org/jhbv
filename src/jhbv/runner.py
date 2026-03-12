@@ -182,13 +182,15 @@ class HBVRunner(  # type: ignore[misc]
             )
 
             # Try multiple possible locations for the shapefile
+            # spatial_mode may be a SpatialMode enum — use its string value for paths
+            mode_str = self.spatial_mode.value if hasattr(self.spatial_mode, 'value') else str(self.spatial_mode)
             possible_paths = [
                 # Standard location (top-level)
                 catchment_dir / f"{self.domain_name}_HRUs_{discretization}.shp",
                 # Lumped subdirectory with experiment_id
-                catchment_dir / self.spatial_mode / self.experiment_id / f"{self.domain_name}_HRUs_{discretization}.shp",
+                catchment_dir / mode_str / self.experiment_id / f"{self.domain_name}_HRUs_{discretization}.shp",
                 # Lumped subdirectory without experiment_id
-                catchment_dir / self.spatial_mode / f"{self.domain_name}_HRUs_{discretization}.shp",
+                catchment_dir / mode_str / f"{self.domain_name}_HRUs_{discretization}.shp",
             ]
 
             catchment_path = None
