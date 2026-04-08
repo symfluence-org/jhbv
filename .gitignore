@@ -6,3 +6,6 @@ build/
 *.so
 .venv/
 .eggs/
+
+# Claude Code instructions
+CLAUDE.md
