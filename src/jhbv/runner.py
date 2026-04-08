@@ -184,14 +184,25 @@ class HBVRunner(  # type: ignore[misc]
             # Try multiple possible locations for the shapefile
             # spatial_mode may be a SpatialMode enum — use its string value for paths
             mode_str = self.spatial_mode.value if hasattr(self.spatial_mode, 'value') else str(self.spatial_mode)
-            possible_paths = [
-                # Standard location (top-level)
-                catchment_dir / f"{self.domain_name}_HRUs_{discretization}.shp",
-                # Lumped subdirectory with experiment_id
-                catchment_dir / mode_str / self.experiment_id / f"{self.domain_name}_HRUs_{discretization}.shp",
-                # Lumped subdirectory without experiment_id
-                catchment_dir / mode_str / f"{self.domain_name}_HRUs_{discretization}.shp",
-            ]
+
+            # Build candidate paths with case variations (GRUs vs GRUS)
+            disc_variants = {discretization, discretization.upper()}
+            possible_paths = []
+            for disc in disc_variants:
+                possible_paths.extend([
+                    # Standard location (top-level)
+                    catchment_dir / f"{self.domain_name}_HRUs_{disc}.shp",
+                    # Lumped subdirectory with experiment_id
+                    catchment_dir / mode_str / self.experiment_id / f"{self.domain_name}_HRUs_{disc}.shp",
+                    # Lumped subdirectory without experiment_id
+                    catchment_dir / mode_str / f"{self.domain_name}_HRUs_{disc}.shp",
+                ])
+            # Also search any existing experiment directory under the mode
+            mode_dir = catchment_dir / mode_str
+            if mode_dir.exists():
+                for disc in disc_variants:
+                    for shp in mode_dir.rglob(f"{self.domain_name}_HRUs_{disc}.shp"):
+                        possible_paths.append(shp)
 
             catchment_path = None
             for path in possible_paths:
@@ -629,13 +640,17 @@ class HBVRunner(  # type: ignore[misc]
     def _save_lumped_results(self, runoff: np.ndarray, time_index: pd.DatetimeIndex) -> None:
         """Save lumped simulation results."""
         # Get catchment area for unit conversion
-        area_m2 = self._get_catchment_area()
-
-        # Convert mm/timestep to m³/s: Q = runoff * area / (1000 * seconds_per_timestep)
-        # For daily: seconds_per_timestep = 86400
-        # For hourly: seconds_per_timestep = 3600
         seconds_per_timestep = self.timestep_hours * 3600
-        streamflow_cms = runoff * area_m2 / (1000.0 * seconds_per_timestep)
+        try:
+            area_m2 = self._get_catchment_area()
+            # Convert mm/timestep to m³/s: Q = runoff * area / (1000 * seconds_per_timestep)
+            streamflow_cms = runoff * area_m2 / (1000.0 * seconds_per_timestep)
+        except (ValueError, FileNotFoundError):
+            self.logger.warning(
+                "Catchment area not available; saving runoff in mm/day only"
+            )
+            area_m2 = None
+            streamflow_cms = np.full_like(runoff, np.nan)
 
         # Also compute runoff in mm/day for comparison
         runoff_mm_day = runoff * (24.0 / self.timestep_hours)
@@ -668,7 +683,7 @@ class HBVRunner(  # type: ignore[misc]
                 'spatial_mode': 'lumped',
                 'domain': self.domain_name,
                 'experiment_id': self.experiment_id,
-                'catchment_area_m2': area_m2,
+                'catchment_area_m2': area_m2 if area_m2 is not None else 'unknown',
                 'timestep_hours': self.timestep_hours,
             }
         )

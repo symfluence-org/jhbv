@@ -141,8 +141,9 @@ class HBVPreProcessor(BaseModelPreProcessor, SpatialModeDetectionMixin):  # type
             # Extract variables
             time = pd.to_datetime(forcing_ds.time.values)
 
-            # Precipitation (check various naming conventions)
-            precip_vars = ['pr', 'precip', 'pptrate', 'prcp', 'precipitation']
+            # Precipitation (check various naming conventions, including CFIF)
+            precip_vars = ['pr', 'precip', 'pptrate', 'prcp', 'precipitation',
+                           'precipitation_flux', 'precipitation_rate']
             precip = None
             precip_var_name = None
             for var in precip_vars:
@@ -166,8 +167,9 @@ class HBVPreProcessor(BaseModelPreProcessor, SpatialModeDetectionMixin):  # type
                 "Precipitation"
             )
 
-            # Temperature (check various naming conventions)
-            temp_vars = ['temp', 'tas', 'airtemp', 'tair', 'temperature', 'tmean']
+            # Temperature (check various naming conventions, including CFIF)
+            temp_vars = ['temp', 'tas', 'airtemp', 'tair', 'temperature', 'tmean',
+                         'air_temperature']
             temp = None
             for var in temp_vars:
                 if var in forcing_ds:
@@ -380,7 +382,11 @@ class HBVPreProcessor(BaseModelPreProcessor, SpatialModeDetectionMixin):  # type
 
             if 'hru' in forcing_ds.dims:
                 # Forcing already per-HRU
-                precip_var_name = 'pr' if 'pr' in forcing_ds else 'precip'
+                precip_var_name = next(
+                    (v for v in ['pr', 'precip', 'precipitation_flux', 'precipitation_rate',
+                                 'pptrate', 'prcp', 'precipitation'] if v in forcing_ds),
+                    'pr'  # fallback
+                )
                 precip = forcing_ds[precip_var_name].values
                 temp = self._get_temperature_variable(forcing_ds)
                 pet = self._get_pet_distributed(forcing_ds, temp, time, timestep_config['time_label'])
@@ -393,7 +399,8 @@ class HBVPreProcessor(BaseModelPreProcessor, SpatialModeDetectionMixin):  # type
                 precip, temp, pet = self._spatially_average_to_hrus(forcing_ds, catchment)
 
                 # Try to get units from original forcing dataset
-                precip_var_candidates = ['pr', 'precip', 'pptrate', 'prcp', 'precipitation']
+                precip_var_candidates = ['pr', 'precip', 'pptrate', 'prcp', 'precipitation',
+                                         'precipitation_flux', 'precipitation_rate']
                 precip_units = ''
                 for var in precip_var_candidates:
                     if var in forcing_ds:
@@ -510,15 +517,45 @@ class HBVPreProcessor(BaseModelPreProcessor, SpatialModeDetectionMixin):  # type
         # Use shared ForcingDataProcessor for loading (handles multi-file data)
         fdp = ForcingDataProcessor(self.config, self.logger)
 
+        # Determine dataset-specific glob pattern to avoid loading stale files
+        # from a previously configured dataset (e.g., AORC files when ERA5 is active)
+        forcing_dataset = self._get_config_value(
+            lambda: self.config.forcing.dataset, default=None
+        )
+        if forcing_dataset:
+            pattern = f"*{forcing_dataset}*.nc"
+        else:
+            pattern = '*.nc'
+
         # Try forcing_basin_path first (from base class)
         if hasattr(self, 'forcing_basin_path') and self.forcing_basin_path.exists():
             self.logger.info(f"Loading basin-averaged forcing from: {self.forcing_basin_path}")
             try:
-                ds = fdp.load_forcing_data(self.forcing_basin_path)
+                ds = fdp.load_forcing_data(self.forcing_basin_path, pattern=pattern)
                 if ds is not None:
                     # Subset to simulation time window
                     ds = self.subset_to_simulation_time(ds, "Forcing")
                     return ds
+            except FileNotFoundError:
+                # No files matching the dataset pattern — try *.nc before merged forcing
+                if pattern != '*.nc':
+                    self.logger.warning(
+                        f"No {forcing_dataset} basin-averaged forcing files found, "
+                        f"trying all NetCDF files"
+                    )
+                    try:
+                        ds = fdp.load_forcing_data(self.forcing_basin_path, pattern='*.nc')
+                        if ds is not None:
+                            ds = self.subset_to_simulation_time(ds, "Forcing")
+                            return ds
+                    except FileNotFoundError:
+                        self.logger.warning(
+                            "No basin-averaged forcing files found, trying merged forcing"
+                        )
+                else:
+                    self.logger.warning(
+                        "No basin-averaged forcing files found, trying merged forcing"
+                    )
             except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
                 raise RuntimeError(
                     f"Error loading forcing data from {self.forcing_basin_path}: {e}"
@@ -547,7 +584,7 @@ class HBVPreProcessor(BaseModelPreProcessor, SpatialModeDetectionMixin):  # type
 
     def _get_temperature_variable(self, ds: xr.Dataset) -> np.ndarray:
         """Extract temperature variable from dataset."""
-        for var in ['temp', 'tas', 'airtemp', 'tair', 'temperature']:
+        for var in ['temp', 'tas', 'airtemp', 'tair', 'temperature', 'air_temperature']:
             if var in ds:
                 return ds[var].values
         raise ValueError("Temperature variable not found in forcing dataset")
@@ -711,7 +748,7 @@ class HBVPreProcessor(BaseModelPreProcessor, SpatialModeDetectionMixin):  # type
                 catchment = gpd.read_file(self.get_catchment_path())
                 centroid = catchment.to_crs(epsg=4326).unary_union.centroid
                 lat = centroid.y
-            except (FileNotFoundError, KeyError, IndexError, ValueError):
+            except Exception:  # noqa: BLE001 — shapefile may not exist yet
                 lat = 45.0
                 self.logger.warning(f"Using default latitude {lat} for PET calculation")
         else:
