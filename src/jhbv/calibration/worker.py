@@ -460,6 +460,95 @@ class HBVWorker(InMemoryModelWorker):
         """
         return HAS_JAX and self._use_jax
 
+    def _get_calibration_slice(self) -> Optional[Tuple[int, int]]:
+        """Get start/end indices for calibration period within post-warmup arrays.
+
+        Returns:
+            Tuple of (start_idx, end_idx) for slicing post-warmup arrays,
+            or None if no calibration period is configured.
+        """
+        cal_period = self._cfg(
+            'CALIBRATION_PERIOD',
+            self._cfg('EXPERIMENT_CALIBRATION_PERIOD', '')
+        )
+        if not cal_period or self._time_index is None:
+            return None
+
+        try:
+            dates = [d.strip() for d in cal_period.split(',')]
+            if len(dates) < 2:
+                return None
+
+            start_date = pd.Timestamp(dates[0])
+            end_date = pd.Timestamp(dates[1])
+
+            warmup_steps = warmup_timesteps(self.warmup_days, self.timestep_hours)
+            time_after_warmup = self._time_index[warmup_steps:]
+
+            if not isinstance(time_after_warmup, pd.DatetimeIndex):
+                time_after_warmup = pd.DatetimeIndex(time_after_warmup)
+
+            cal_mask = (time_after_warmup >= start_date) & (time_after_warmup <= end_date)
+            indices = np.where(cal_mask)[0]
+
+            if len(indices) == 0:
+                return None
+
+            return int(indices[0]), int(indices[-1] + 1)
+        except (ValueError, TypeError):
+            return None
+
+    def _build_loss_fn(self, metric: str):
+        """Build a JAX-differentiable loss function that respects calibration period.
+
+        Returns:
+            A function (params_array, param_names) -> scalar loss.
+        """
+        from jhbv.model import simulate_jax
+        from jhbv.parameters import create_params_from_dict, scale_params_for_timestep
+
+        assert self._forcing is not None
+        precip = jnp.array(self._forcing['precip'])
+        temp = jnp.array(self._forcing['temp'])
+        pet = jnp.array(self._forcing['pet'])
+        obs = jnp.array(self._observations)
+        warmup_steps = warmup_timesteps(self.warmup_days, self.timestep_hours)
+        timestep_hours = self.timestep_hours
+        warmup_days = self.warmup_days
+        cal_slice = self._get_calibration_slice()
+
+        def loss_fn(params_array, param_names):
+            params_dict = dict(zip(param_names, params_array))
+            scaled_params = scale_params_for_timestep(params_dict, timestep_hours)
+            params_obj = create_params_from_dict(scaled_params, use_jax=True)
+
+            sim, _ = simulate_jax(
+                precip, temp, pet, params_obj,
+                warmup_days=warmup_days,
+                timestep_hours=timestep_hours
+            )
+
+            sim_eval = sim[warmup_steps:]
+            obs_eval = obs[warmup_steps:]
+
+            if cal_slice is not None:
+                start, end = cal_slice
+                sim_eval = sim_eval[start:end]
+                obs_eval = obs_eval[start:end]
+
+            if metric.lower() == 'nse':
+                ss_res = jnp.sum((sim_eval - obs_eval) ** 2)
+                ss_tot = jnp.sum((obs_eval - jnp.mean(obs_eval)) ** 2)
+                return -(1.0 - ss_res / (ss_tot + 1e-10))
+
+            r = jnp.corrcoef(sim_eval, obs_eval)[0, 1]
+            alpha = jnp.std(sim_eval) / (jnp.std(obs_eval) + 1e-10)
+            beta = jnp.mean(sim_eval) / (jnp.mean(obs_eval) + 1e-10)
+            kge_val = 1.0 - jnp.sqrt((r - 1) ** 2 + (alpha - 1) ** 2 + (beta - 1) ** 2)
+            return -kge_val
+
+        return loss_fn
+
     def compute_gradient(
         self,
         params: Dict[str, float],
@@ -484,25 +573,7 @@ class HBVWorker(InMemoryModelWorker):
                 return None
 
         try:
-            from jhbv.model import kge_loss, nse_loss
-
-            assert self._forcing is not None
-            precip = jnp.array(self._forcing['precip'])
-            temp = jnp.array(self._forcing['temp'])
-            pet = jnp.array(self._forcing['pet'])
-            obs = jnp.array(self._observations)
-            timestep_hours = self.timestep_hours
-
-            def loss_fn(params_array, param_names):
-                params_dict = dict(zip(param_names, params_array))
-                if metric.lower() == 'nse':
-                    return nse_loss(params_dict, precip, temp, pet, obs,
-                                   self.warmup_days, use_jax=True,
-                                   timestep_hours=timestep_hours)
-                return kge_loss(params_dict, precip, temp, pet, obs,
-                               self.warmup_days, use_jax=True,
-                               timestep_hours=timestep_hours)
-
+            loss_fn = self._build_loss_fn(metric)
             grad_fn = jax.grad(loss_fn)
             param_names = list(params.keys())
             param_values = jnp.array([params[k] for k in param_names])
@@ -540,25 +611,7 @@ class HBVWorker(InMemoryModelWorker):
                 return self.penalty_score, None
 
         try:
-            from jhbv.model import kge_loss, nse_loss
-
-            assert self._forcing is not None
-            precip = jnp.array(self._forcing['precip'])
-            temp = jnp.array(self._forcing['temp'])
-            pet = jnp.array(self._forcing['pet'])
-            obs = jnp.array(self._observations)
-            timestep_hours = self.timestep_hours
-
-            def loss_fn(params_array, param_names):
-                params_dict = dict(zip(param_names, params_array))
-                if metric.lower() == 'nse':
-                    return nse_loss(params_dict, precip, temp, pet, obs,
-                                   self.warmup_days, use_jax=True,
-                                   timestep_hours=timestep_hours)
-                return kge_loss(params_dict, precip, temp, pet, obs,
-                               self.warmup_days, use_jax=True,
-                               timestep_hours=timestep_hours)
-
+            loss_fn = self._build_loss_fn(metric)
             value_and_grad_fn = jax.value_and_grad(loss_fn)
             param_names = list(params.keys())
             param_values = jnp.array([params[k] for k in param_names])
