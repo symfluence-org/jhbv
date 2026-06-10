@@ -14,13 +14,13 @@ A native JAX-based implementation of the HBV-96 hydrological model, enabling:
 Components:
     - HBVPreProcessor: Prepares forcing data (P, T, PET)
     - HBVRunner: Executes model simulations
-    - HBVPostprocessor: Extracts streamflow results
+    - HBVPostProcessor: Extracts streamflow results
     - HBVWorker: Handles calibration with gradient support
     - DistributedHBV: Semi-distributed HBV with river network routing
 
 Usage:
     # Standard workflow
-    from jhbv import HBVPreProcessor, HBVRunner, HBVPostprocessor
+    from jhbv import HBVPreProcessor, HBVRunner, HBVPostProcessor
 
     preprocessor = HBVPreProcessor(config, logger)
     preprocessor.run_preprocessing()
@@ -74,8 +74,8 @@ _LAZY_IMPORTS = {
     # Main components
     'HBVPreProcessor': ('.preprocessor', 'HBVPreProcessor'),
     'HBVRunner': ('.runner', 'HBVRunner'),
-    'HBVPostprocessor': ('.postprocessor', 'HBVPostprocessor'),
-    'HBVRoutedPostprocessor': ('.postprocessor', 'HBVRoutedPostprocessor'),
+    'HBVPostProcessor': ('.postprocessor', 'HBVPostProcessor'),
+    'HBVRoutedPostProcessor': ('.postprocessor', 'HBVRoutedPostProcessor'),
     'HBVResultExtractor': ('.extractor', 'HBVResultExtractor'),
 
     # Parameters (from parameters module)
@@ -188,7 +188,7 @@ def register() -> None:
     from .calibration.worker import HBVWorker
     from .config import HBVConfigAdapter
     from .extractor import HBVResultExtractor
-    from .postprocessor import HBVPostprocessor, HBVRoutedPostprocessor
+    from .postprocessor import HBVPostProcessor, HBVRoutedPostProcessor
     from .preprocessor import HBVPreProcessor
     from .runner import HBVRunner
 
@@ -197,7 +197,7 @@ def register() -> None:
         preprocessor=HBVPreProcessor,
         runner=HBVRunner,
         runner_method='run_hbv',
-        postprocessor=HBVPostprocessor,
+        postprocessor=HBVPostProcessor,
         config_adapter=HBVConfigAdapter,
         result_extractor=HBVResultExtractor,
         optimizer=HBVModelOptimizer,
@@ -206,7 +206,7 @@ def register() -> None:
     )
     model_manifest(
         "HBV_routed",
-        postprocessor=HBVRoutedPostprocessor,
+        postprocessor=HBVRoutedPostProcessor,
     )
 
 
@@ -277,7 +277,7 @@ if TYPE_CHECKING:
         get_routing_buffer_length,
         scale_params_for_timestep,
     )
-    from .postprocessor import HBVPostprocessor, HBVRoutedPostprocessor
+    from .postprocessor import HBVPostProcessor, HBVRoutedPostProcessor
     from .preprocessor import HBVPreProcessor
     from .regionalization import (
         TransferFunctionConfig,
@@ -302,8 +302,8 @@ __all__ = [
     # Main components
     'HBVPreProcessor',
     'HBVRunner',
-    'HBVPostprocessor',
-    'HBVRoutedPostprocessor',
+    'HBVPostProcessor',
+    'HBVRoutedPostProcessor',
     'HBVResultExtractor',
 
     # Configuration

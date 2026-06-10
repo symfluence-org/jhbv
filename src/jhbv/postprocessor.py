@@ -5,13 +5,13 @@
 HBV Model Postprocessor.
 
 Extracts and processes HBV-96 model output for analysis and visualization.
-Uses StandardModelPostprocessor for minimal boilerplate.
+Uses StandardModelPostProcessor for minimal boilerplate.
 """
 
-from symfluence.models.base.standard_postprocessor import StandardModelPostprocessor
+from symfluence.models.base.standard_postprocessor import StandardModelPostProcessor
 
 
-class HBVPostprocessor(StandardModelPostprocessor):
+class HBVPostProcessor(StandardModelPostProcessor):
     """
     Postprocessor for HBV-96 model output.
 
@@ -67,7 +67,7 @@ class HBVPostprocessor(StandardModelPostprocessor):
         return nc_file
 
 
-class HBVRoutedPostprocessor(StandardModelPostprocessor):
+class HBVRoutedPostProcessor(StandardModelPostProcessor):
     """
     Postprocessor for routed HBV output (via mizuRoute).
 
