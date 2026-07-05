@@ -1,0 +1,18 @@
+{
+  "title": "jHBV: a differentiable JAX implementation of the HBV-96 hydrological model",
+  "description": "<p>Dual-backend (JAX + NumPy) implementation of the HBV-96 rainfall–runoff model — usable standalone or as a SYMFLUENCE plugin.</p><p>Part of the SYMFLUENCE JAX-native model family, described in the paper series accompanying SYMFLUENCE (Eythorsson et al., 2026, Water Resources Research).</p>",
+  "upload_type": "software",
+  "license": "Apache-2.0",
+  "keywords": [
+    "hydrology",
+    "hydrological modeling",
+    "JAX",
+    "differentiable modeling",
+    "calibration"
+  ],
+  "creators": [
+    {
+      "name": "Eythorsson, Darri"
+    }
+  ]
+}
