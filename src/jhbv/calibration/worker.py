@@ -168,7 +168,7 @@ class HBVWorker(InMemoryModelWorker):
         import pandas as pd
 
         domain_name = self._cfg('DOMAIN_NAME', 'domain')
-        data_dir = Path(self._get_config_value(lambda: str(self.config.system.data_dir), default='.', dict_key='DATA_DIR'))
+        data_dir = Path(self._get_config_value(lambda: str(self.config.system.data_dir), default='.', dict_key='SYMFLUENCE_DATA_DIR'))
         project_dir = data_dir / f"domain_{domain_name}"
 
         obs_patterns = [
