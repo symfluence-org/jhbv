@@ -349,23 +349,13 @@ class HBVWorker(InMemoryModelWorker):
 
         Returns:
             Runoff array in mm/timestep
-
-        Raises:
-            ValueError: If recession ordering constraint k0 > k1 > k2 is violated.
         """
-        # Enforce recession coefficient ordering: k0 > k1 > k2
-        # This is a physical constraint — fast flow must recede faster than
-        # interflow, which must recede faster than baseflow.
-        # Sort the sampled values to satisfy the constraint rather than rejecting,
-        # so that optimizers (PSO, DDS, etc.) can explore the full parameter space.
-        k0 = params.get('k0', 0.3)
-        k1 = params.get('k1', 0.1)
-        k2 = params.get('k2', 0.01)
-        if not (k0 > k1 > k2):
-            sorted_k = sorted([k0, k1, k2], reverse=True)
-            params = dict(params)  # avoid mutating caller's dict
-            params['k0'], params['k1'], params['k2'] = sorted_k
-
+        # The k0 > k1 > k2 constraint is applied inside
+        # jhbv.parameters.create_params_from_dict, which every simulation
+        # path goes through — including the differentiable loss in
+        # _build_loss_fn. Do not re-implement it here; a second copy is how
+        # the run path and the gradient path drifted apart in the first
+        # place.
         if not self._ensure_simulate_fn():
             raise RuntimeError("HBV simulation function not available")
 
@@ -460,43 +450,9 @@ class HBVWorker(InMemoryModelWorker):
         """
         return HAS_JAX and self._use_jax
 
-    def _get_calibration_slice(self) -> Optional[Tuple[int, int]]:
-        """Get start/end indices for calibration period within post-warmup arrays.
-
-        Returns:
-            Tuple of (start_idx, end_idx) for slicing post-warmup arrays,
-            or None if no calibration period is configured.
-        """
-        cal_period = self._cfg(
-            'CALIBRATION_PERIOD',
-            self._cfg('EXPERIMENT_CALIBRATION_PERIOD', '')
-        )
-        if not cal_period or self._time_index is None:
-            return None
-
-        try:
-            dates = [d.strip() for d in cal_period.split(',')]
-            if len(dates) < 2:
-                return None
-
-            start_date = pd.Timestamp(dates[0])
-            end_date = pd.Timestamp(dates[1])
-
-            warmup_steps = warmup_timesteps(self.warmup_days, self.timestep_hours)
-            time_after_warmup = self._time_index[warmup_steps:]
-
-            if not isinstance(time_after_warmup, pd.DatetimeIndex):
-                time_after_warmup = pd.DatetimeIndex(time_after_warmup)
-
-            cal_mask = (time_after_warmup >= start_date) & (time_after_warmup <= end_date)
-            indices = np.where(cal_mask)[0]
-
-            if len(indices) == 0:
-                return None
-
-            return int(indices[0]), int(indices[-1] + 1)
-        except (ValueError, TypeError):
-            return None
+    def warmup_steps(self) -> int:
+        """Warmup length in timesteps (HBV may run sub-daily)."""
+        return warmup_timesteps(self.warmup_days, self.timestep_hours)
 
     def _build_loss_fn(self, metric: str):
         """Build a JAX-differentiable loss function that respects calibration period.
@@ -515,7 +471,7 @@ class HBVWorker(InMemoryModelWorker):
         warmup_steps = warmup_timesteps(self.warmup_days, self.timestep_hours)
         timestep_hours = self.timestep_hours
         warmup_days = self.warmup_days
-        cal_slice = self._get_calibration_slice()
+        cal_slice = self.get_calibration_slice()
 
         def loss_fn(params_array, param_names):
             params_dict = dict(zip(param_names, params_array))
