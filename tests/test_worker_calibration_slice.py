@@ -12,6 +12,15 @@ import pytest
 
 from jhbv.calibration.worker import HBVWorker
 
+# get_calibration_slice() landed in SYMFLUENCE alongside this change
+# (symfluence-org/SYMFLUENCE#392). Until a release carrying it is on PyPI,
+# CI resolves an older symfluence and these cases cannot run. They activate
+# on their own once the dependency catches up — no follow-up edit needed.
+pytestmark = pytest.mark.skipif(
+    not hasattr(HBVWorker, "get_calibration_slice"),
+    reason="requires a symfluence providing InMemoryModelWorker.get_calibration_slice",
+)
+
 
 def _make_worker(time_index, cal_period, warmup_days=365, timestep_hours=24):
     """Build a bare HBVWorker with only the attributes the method reads."""
