@@ -209,6 +209,32 @@ def register() -> None:
         postprocessor=HBVRoutedPostProcessor,
     )
 
+    # Contribute HBV's calibration bounds to symfluence's catalogue.
+    #
+    # HBV predates the register_model_bounds seam, so symfluence carried a
+    # get_hbv_bounds() entry as a compatibility shim -- meaning a change to
+    # HBV's bounds needed a FRAMEWORK release. Registering here makes this
+    # package the owner: get_model_bounds('HBV') resolves what we register,
+    # ahead of the built-in entry, so this works against current symfluence
+    # and lets a later release drop the compat entry entirely.
+    #
+    # Values come from jhbv.model.PARAM_BOUNDS, already the single source for
+    # every other bounds consumer in this package, and verified identical to
+    # what the framework served (15 names, zero differences) -- so adopting the
+    # seam changes no calibration result.
+    from symfluence.core.calibration.parameters import ParameterInfo, register_model_bounds
+
+    from .model import PARAM_BOUNDS
+
+    register_model_bounds(
+        "HBV",
+        params={
+            name: ParameterInfo(float(lo), float(hi), description=f"HBV {name}")
+            for name, (lo, hi) in PARAM_BOUNDS.items()
+        },
+        names=list(PARAM_BOUNDS),
+    )
+
 
 # Type hints for IDE support
 if TYPE_CHECKING:

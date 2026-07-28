@@ -15,7 +15,6 @@ import numpy as np
 
 from jhbv.model import DEFAULT_PARAMS, PARAM_BOUNDS
 from symfluence.optimization.core.base_parameter_manager import BaseParameterManager
-from symfluence.optimization.core.parameter_bounds_registry import get_hbv_bounds
 
 
 class HBVParameterManager(BaseParameterManager):
@@ -69,8 +68,19 @@ class HBVParameterManager(BaseParameterManager):
         return self.hbv_params
 
     def _load_parameter_bounds(self) -> Dict[str, Dict[str, float]]:
-        """Return HBV parameter bounds from central registry."""
-        return get_hbv_bounds()
+        """Return HBV parameter bounds, owned by this package.
+
+        Was ``get_hbv_bounds()`` from symfluence's shared catalogue. HBV
+        predates the ``register_model_bounds`` seam, so its bounds lived in
+        the framework and could not be changed without a framework release.
+        They now come from ``jhbv.model.PARAM_BOUNDS`` -- the values this
+        package already uses everywhere else, verified identical to what the
+        catalogue served (15 names, zero differences).
+        """
+        return {
+            name: {'min': float(lo), 'max': float(hi)}
+            for name, (lo, hi) in PARAM_BOUNDS.items()
+        }
 
     def update_model_files(self, params: Dict[str, float]) -> bool:
         """
