@@ -1,8 +1,9 @@
-"""Tests for HBVWorker._get_calibration_slice.
+"""Tests for the calibration-period slice used by the HBV loss.
 
 Covers the calibration-period -> post-warmup index slicing used by the
-gradient/value-and-grad loss (jhbv.calibration.worker._build_loss_fn), which
-otherwise has no direct coverage.
+gradient/value-and-grad loss (jhbv.calibration.worker._build_loss_fn). The
+slice itself lives on the shared InMemoryModelWorker base; HBV supplies the
+timestep-aware warmup length via warmup_steps().
 """
 
 import numpy as np
@@ -29,7 +30,7 @@ def test_slice_selects_the_calibration_window_after_warmup():
     idx = pd.date_range("2010-01-01", periods=365 + 365, freq="D")
     w = _make_worker(idx, "2011-03-01,2011-05-31")
 
-    sl = w._get_calibration_slice()
+    sl = w.get_calibration_slice()
     assert sl is not None
     start, end = sl
 
@@ -43,21 +44,21 @@ def test_slice_selects_the_calibration_window_after_warmup():
 
 def test_no_calibration_period_returns_none():
     idx = pd.date_range("2011-01-01", periods=400, freq="D")
-    assert _make_worker(idx, None)._get_calibration_slice() is None
-    assert _make_worker(idx, "")._get_calibration_slice() is None
+    assert _make_worker(idx, None).get_calibration_slice() is None
+    assert _make_worker(idx, "").get_calibration_slice() is None
 
 
 def test_missing_time_index_returns_none():
-    assert _make_worker(None, "2011-03-01,2011-05-31")._get_calibration_slice() is None
+    assert _make_worker(None, "2011-03-01,2011-05-31").get_calibration_slice() is None
 
 
 def test_period_outside_record_returns_none():
     idx = pd.date_range("2010-01-01", periods=365 + 365, freq="D")
     # A window entirely before the post-warmup span yields no matching indices.
-    assert _make_worker(idx, "2009-01-01,2009-06-30")._get_calibration_slice() is None
+    assert _make_worker(idx, "2009-01-01,2009-06-30").get_calibration_slice() is None
 
 
 def test_malformed_period_returns_none():
     idx = pd.date_range("2010-01-01", periods=365 + 365, freq="D")
-    assert _make_worker(idx, "not-a-date")._get_calibration_slice() is None
-    assert _make_worker(idx, "2011-01-01")._get_calibration_slice() is None  # single date
+    assert _make_worker(idx, "not-a-date").get_calibration_slice() is None
+    assert _make_worker(idx, "2011-01-01").get_calibration_slice() is None  # single date

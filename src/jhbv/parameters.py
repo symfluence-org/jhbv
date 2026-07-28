@@ -140,6 +140,58 @@ class HBVParameters(NamedTuple):
 # PARAMETER UTILITIES
 # =============================================================================
 
+# Order in which the recession coefficients must appear, fastest first.
+RECESSION_ORDER = ('k0', 'k1', 'k2')
+
+
+def enforce_recession_ordering(
+    params_dict: Dict[str, Any],
+    use_jax: bool = False
+) -> Dict[str, Any]:
+    """
+    Return parameters with the recession coefficients ordered k0 > k1 > k2.
+
+    Surface runoff must recede faster than interflow, which must recede
+    faster than baseflow. Rather than rejecting parameter sets that violate
+    this, the three values are sorted into the required order, so optimizers
+    can explore the full box defined by PARAM_BOUNDS (whose k0/k1/k2 ranges
+    overlap) without ever simulating a physically inconsistent cascade.
+
+    Every path that turns a parameter dictionary into a simulation must call
+    this. It exists as one shared function precisely because it used to be
+    applied only on the numpy simulation path: the JAX loss used by ADAM and
+    L-BFGS optimized an unconstrained model, converged on an unordered set,
+    and the final evaluation then silently re-sorted it and scored a
+    different model — a large, silent gap between the reported best score
+    and the final calibration metric.
+
+    Args:
+        params_dict: Parameter dictionary, which may violate the ordering.
+        use_jax: Sort with JAX so the result stays differentiable. Sorting
+            is differentiable almost everywhere (it is a permutation; the
+            gradient flows to whichever slot each value lands in), so
+            gradient-based optimizers still descend on the true objective.
+
+    Returns:
+        A new dictionary with k0 >= k1 >= k2. Returned unchanged if any of
+        the three coefficients is absent.
+    """
+    values = [params_dict.get(name) for name in RECESSION_ORDER]
+    if any(v is None for v in values):
+        return params_dict
+
+    ordered = dict(params_dict)
+    if use_jax and HAS_JAX:
+        # Descending sort; jnp.sort is ascending, so reverse it.
+        sorted_k = jnp.sort(jnp.stack([jnp.asarray(v) for v in values]))[::-1]
+    else:
+        sorted_k = np.sort(np.asarray(values, dtype=float))[::-1]
+
+    for name, value in zip(RECESSION_ORDER, sorted_k):
+        ordered[name] = value
+    return ordered
+
+
 def create_params_from_dict(
     params_dict: Dict[str, Any],
     use_jax: bool = True
@@ -147,16 +199,27 @@ def create_params_from_dict(
     """
     Create HBVParameters from a dictionary.
 
+    Every simulation path — numpy, JAX, and the differentiable loss used by
+    gradient-based optimizers — builds its parameters here, so this is where
+    the k0 > k1 > k2 constraint is enforced. Applying it at this single
+    choke point is deliberate: when the constraint lived only on the numpy
+    run path, gradient optimizers scored an unconstrained model and the
+    final evaluation then re-sorted the coefficients and scored a different
+    one.
+
     Args:
         params_dict: Dictionary mapping parameter names to values.
             Missing parameters use defaults.
         use_jax: Whether to convert to JAX arrays (requires JAX).
 
     Returns:
-        HBVParameters namedtuple.
+        HBVParameters namedtuple, with recession coefficients ordered.
     """
-    # Merge with defaults
-    full_params = {**DEFAULT_PARAMS, **params_dict}
+    # Merge with defaults, then apply the recession-ordering constraint.
+    full_params = enforce_recession_ordering(
+        {**DEFAULT_PARAMS, **params_dict},
+        use_jax=(use_jax and HAS_JAX),
+    )
 
     if use_jax and HAS_JAX:
         return HBVParameters(
