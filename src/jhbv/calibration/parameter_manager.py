@@ -58,6 +58,11 @@ class HBVParameterManager(BaseParameterManager):
         # Store internal references
         self.all_bounds = PARAM_BOUNDS.copy()
         self.defaults = DEFAULT_PARAMS.copy()
+        if self._get_config_value(lambda: self.config.model.hbv.glacier_enabled,
+                                  default=False, dict_key='HBV_GLACIER_ENABLED'):
+            from jhbv.glacier import GLACIER_BOUNDS, GLACIER_DEFAULTS
+            self.all_bounds.update(GLACIER_BOUNDS, fc=(50., 1500.), perc=(0., 40.))
+            self.defaults.update(GLACIER_DEFAULTS)
         self.calibration_params = self.hbv_params
 
     # ========================================================================
@@ -70,7 +75,13 @@ class HBVParameterManager(BaseParameterManager):
 
     def _load_parameter_bounds(self) -> Dict[str, Dict[str, float]]:
         """Return HBV parameter bounds from central registry."""
-        return get_hbv_bounds()
+        bounds = get_hbv_bounds().copy()
+        if self._get_config_value(lambda: self.config.model.hbv.glacier_enabled,
+                                  default=False, dict_key='HBV_GLACIER_ENABLED'):
+            from jhbv.glacier import GLACIER_BOUNDS
+            bounds.update({k: dict(min=v[0], max=v[1]) for k, v in
+                           {**GLACIER_BOUNDS, 'fc': (50., 1500.), 'perc': (0., 40.)}.items()})
+        return bounds
 
     def update_model_files(self, params: Dict[str, float]) -> bool:
         """

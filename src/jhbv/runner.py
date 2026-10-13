@@ -322,13 +322,18 @@ class HBVRunner(  # type: ignore[misc]
             self.output_dir.mkdir(parents=True, exist_ok=True)
 
             # Execute model
-            if self.spatial_mode == SpatialMode.LUMPED:
+            glacier_enabled = self._get_config_value(
+                lambda: self.config.model.hbv.glacier_enabled,
+                default=False, dict_key='HBV_GLACIER_ENABLED')
+            if glacier_enabled:
+                success = self._execute_glacier()
+            elif self.spatial_mode == SpatialMode.LUMPED:
                 success = self._execute_lumped()
             else:
                 success = self._execute_distributed()
 
             # Run routing if needed
-            if success and self.needs_routing:
+            if success and self.needs_routing and not glacier_enabled:
                 self.logger.info("Running distributed routing with mizuRoute")
                 success = self._run_distributed_routing()
 
@@ -339,6 +344,42 @@ class HBVRunner(  # type: ignore[misc]
             else:
                 self.logger.error("HBV model run failed")
                 return None
+
+    def _execute_glacier(self) -> bool:
+        """Explicit opt-in path; legacy lumped/distributed execution is unchanged."""
+        from .glacier import GLACIER_DEFAULTS, simulate_glacier
+        from .glacier_io import load_glacier_forcing, write_glacier_output
+        global_routing = self._get_config_value(
+            lambda: self.config.model.routing_model,
+            default='none', dict_key='ROUTING_MODEL')
+        if self.needs_routing or str(global_routing).lower() != 'none':
+            raise ValueError('Glacier mode does not support external routing')
+        if self._initial_state_override is not None:
+            raise ValueError('Legacy HBV restart states cannot be used in glacier mode; use GlacierState core API')
+        filename = self._get_config_value(
+            lambda: self.config.model.hbv.glacier_forcing_file,
+            default=None, dict_key='HBV_GLACIER_FORCING_FILE')
+        if not filename:
+            raise ValueError('Glacier forcing file must be specified')
+        path = Path(filename)
+        if not path.is_absolute():
+            path = self.hbv_forcing_dir / path
+        ds = load_glacier_forcing(path, self.timestep_hours)
+        params = self._get_default_params()
+        for name, value in GLACIER_DEFAULTS.items():
+            params[name] = self._get_config_value(
+                lambda name=name: getattr(self.config.model.hbv, 'default_'+name),
+                default=value, dict_key='HBV_DEFAULT_'+name.upper())
+        params.update(self._external_params or {})
+        output, _ = simulate_glacier(
+            ds.pr.values, ds.temp.values, ds.pet.values, ds.area_km2.values,
+            ds.glacier_fraction.values, params, ds.initial_ice_mm.values,
+            self.timestep_hours, self.backend == 'jax')
+        # Glacier restarts use the core's explicit GlacierState contract. The
+        # legacy runner restart file has a different state structure.
+        write_glacier_output(self.output_dir / f'{self.domain_name}_hbv_output.nc',
+                             ds, output, self.timestep_hours)
+        return True
 
     def _execute_lumped(self) -> bool:
         """Execute HBV in lumped mode."""

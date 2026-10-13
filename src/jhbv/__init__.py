@@ -67,6 +67,8 @@ def _show_experimental_warning():
 
 # Lazy import mapping: attribute name -> (module, attribute)
 _LAZY_IMPORTS = {
+    'simulate_glacier': ('.glacier', 'simulate_glacier'),
+    'GlacierState': ('.glacier', 'GlacierState'),
     # Configuration
     'HBVConfig': ('.config', 'HBVConfig'),
     'HBVConfigAdapter': ('.config', 'HBVConfigAdapter'),
@@ -296,6 +298,8 @@ if TYPE_CHECKING:
 
 
 __all__ = [
+    'simulate_glacier',
+    'GlacierState',
     # Plugin registration
     'register',
 

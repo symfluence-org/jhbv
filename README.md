@@ -1,5 +1,11 @@
 # jHBV
 
+An opt-in elevation-HRU, finite-glacier model is available through
+`jhbv.simulate_glacier` and `model.hbv.glacier_enabled: true` in SYMFLUENCE.
+It includes separate phase/melt thresholds, a shared snow/ice melt budget,
+surface mass-balance diagnostics and a routed water ledger. Glacier mode is off
+by default. See [the equations, input contract and limitations](docs/glacier.md).
+
 [![PyPI version](https://img.shields.io/pypi/v/jhbv.svg)](https://pypi.org/project/jhbv/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
