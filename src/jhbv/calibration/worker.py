@@ -106,6 +106,7 @@ class HBVWorker(InMemoryModelWorker):
 
         # Model-specific components
         self._simulate_fn = None
+        self._glacier_simulate_fn = None
         self._use_jax = HAS_JAX
 
         # Timestep configuration (hours) - maps to config.model.hbv.timestep_hours
@@ -418,15 +419,30 @@ class HBVWorker(InMemoryModelWorker):
             Runoff array in mm/timestep
         """
         if self._cfg('HBV_GLACIER_ENABLED', False):
-            from jhbv.glacier import DEFAULT_PARAMS, GLACIER_DEFAULTS, simulate_glacier
+            from jhbv.glacier import (DEFAULT_PARAMS, GLACIER_DEFAULTS,
+                                     simulate_glacier, simulate_glacier_core,
+                                     validate_parameters)
             p = {name: self._cfg('HBV_DEFAULT_'+name.upper(), value)
                  for name, value in {**DEFAULT_PARAMS, **GLACIER_DEFAULTS}.items()}
             p.update(params)
             ds = self._glacier_dataset
-            self._glacier_output, _ = simulate_glacier(
-                forcing['precip'], forcing['temp'], forcing['pet'],
-                ds.area_km2.values, ds.glacier_fraction.values, p,
-                ds.initial_ice_mm.values, self.timestep_hours, self._use_jax)
+            if self._use_jax:
+                # Reuse a pure compiled kernel across parameter trials. Keep
+                # host validation outside tracing and preserve all diagnostics.
+                p = validate_parameters(p)
+                if getattr(self, '_glacier_simulate_fn', None) is None:
+                    self._glacier_simulate_fn = jax.jit(
+                        simulate_glacier_core,
+                        static_argnames=('timestep_hours', 'use_jax'))
+                self._glacier_output, _ = self._glacier_simulate_fn(
+                    forcing['precip'], forcing['temp'], forcing['pet'],
+                    ds.area_km2.values, ds.glacier_fraction.values,
+                    ds.initial_ice_mm.values, p, self.timestep_hours, True)
+            else:
+                self._glacier_output, _ = simulate_glacier(
+                    forcing['precip'], forcing['temp'], forcing['pet'],
+                    ds.area_km2.values, ds.glacier_fraction.values, p,
+                    ds.initial_ice_mm.values, self.timestep_hours, False)
             return np.asarray(self._glacier_output.runoff)
 
         # The k0 > k1 > k2 constraint is applied inside

@@ -227,6 +227,32 @@ def test_legacy_config_adapter_roundtrip():
     assert not HBVConfigAdapter.from_dict({"HBV_GLACIER_ENABLED": "false"}).glacier_enabled
 
 
+def test_glacier_parameter_manager_preserves_legacy_bounds(tmp_path):
+    import logging
+    from jhbv.calibration.parameter_manager import HBVParameterManager
+
+    cfg = dict(
+        DOMAIN_NAME="test",
+        EXPERIMENT_ID="test",
+        HBV_PARAMS_TO_CALIBRATE="fc,ice_ddf,temperature_offset",
+        HBV_GLACIER_ENABLED=True,
+    )
+    manager = HBVParameterManager(cfg, logging.getLogger("test"), tmp_path)
+    assert manager.get_bounds("fc") == (50.0, 1500.0)
+    assert manager.get_bounds("temperature_offset") == (-1.0, 1.0)
+    assert manager.get_initial_parameters()["ice_ddf"] == 7.0
+    assert manager._load_parameter_bounds()["temperature_offset"]["min"] == -1.0
+    params = dict(fc=500.0, ice_ddf=8.0, temperature_offset=-0.25)
+    recovered = manager.denormalize(manager.normalize(params))
+    for key, value in params.items():
+        assert recovered[key] == pytest.approx(value)
+    cfg["HBV_GLACIER_ENABLED"] = False
+    cfg["HBV_PARAMS_TO_CALIBRATE"] = "fc"
+    legacy = HBVParameterManager(cfg, logging.getLogger("test"), tmp_path)
+    assert legacy.get_bounds("fc") == (50.0, 700.0)
+    assert "ice_ddf" not in legacy.all_bounds
+
+
 def test_runner_worker_and_core_match(tmp_path):
     import pandas as pd
     import xarray as xr
@@ -259,6 +285,22 @@ def test_runner_worker_and_core_match(tmp_path):
     assert w._load_forcing()
     runoff = w._run_simulation(w._forcing, {})
     assert not w.supports_native_gradients()
+    try:
+        import jax
+    except ImportError:
+        jax = None
+    if jax is not None:
+        previous = jax.config.x64_enabled
+        try:
+            jax.config.update("jax_enable_x64", True)
+            w._use_jax = True
+            np.testing.assert_allclose(w._run_simulation(w._forcing, {}), runoff, atol=1e-10)
+            kernel = w._glacier_simulate_fn
+            np.testing.assert_allclose(w._run_simulation(w._forcing, {}), runoff, atol=1e-10)
+            assert w._glacier_simulate_fn is kernel
+        finally:
+            jax.config.update("jax_enable_x64", previous)
+            w._use_jax = False
     w.save_output_files(runoff[1:], tmp_path / "worker", ds.time.values[1:])
     r = HBVRunner.__new__(HBVRunner)
     r._get_config_value = lambda fn, default=None, dict_key=None: cfg.get(dict_key, default)
