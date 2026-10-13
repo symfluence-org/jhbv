@@ -106,12 +106,15 @@ class HBVWorker(InMemoryModelWorker):
 
         # Model-specific components
         self._simulate_fn = None
+        self._glacier_simulate_fn = None
         self._use_jax = HAS_JAX
 
         # Timestep configuration (hours) - maps to config.model.hbv.timestep_hours
         self.timestep_hours = 24  # Default to daily
         if config:
             self.timestep_hours = int(self._cfg('HBV_TIMESTEP_HOURS', self._cfg('TIMESTEP_HOURS', 24)))
+            if self._cfg('HBV_GLACIER_ENABLED', False):
+                self._use_jax = HAS_JAX and self._cfg('HBV_BACKEND', 'jax') == 'jax'
 
     # =========================================================================
     # InMemoryModelWorker Abstract Method Implementations
@@ -143,6 +146,23 @@ class HBVWorker(InMemoryModelWorker):
             True if loading successful
         """
         if self._forcing is not None:
+            return True
+
+        if self._cfg('HBV_GLACIER_ENABLED', False):
+            from jhbv.glacier_io import load_glacier_forcing
+            from pathlib import Path
+            import pandas as pd
+            filename = self._cfg('HBV_GLACIER_FORCING_FILE')
+            if not filename:
+                raise ValueError('Glacier forcing file must be specified')
+            path = Path(filename)
+            if not path.is_absolute():
+                path = self._get_forcing_dir(task) / path
+            self._glacier_dataset = load_glacier_forcing(path, self.timestep_hours)
+            self._forcing = {k: self._glacier_dataset[v].values
+                             for k, v in self._get_forcing_variable_map().items()}
+            self._time_index = pd.DatetimeIndex(self._glacier_dataset.time.values)
+            self._catchment_area_km2 = float(self._glacier_dataset.area_km2.sum())
             return True
 
         try:
@@ -398,6 +418,33 @@ class HBVWorker(InMemoryModelWorker):
         Returns:
             Runoff array in mm/timestep
         """
+        if self._cfg('HBV_GLACIER_ENABLED', False):
+            from jhbv.glacier import (DEFAULT_PARAMS, GLACIER_DEFAULTS,
+                                     simulate_glacier, simulate_glacier_core,
+                                     validate_parameters)
+            p = {name: self._cfg('HBV_DEFAULT_'+name.upper(), value)
+                 for name, value in {**DEFAULT_PARAMS, **GLACIER_DEFAULTS}.items()}
+            p.update(params)
+            ds = self._glacier_dataset
+            if self._use_jax:
+                # Reuse a pure compiled kernel across parameter trials. Keep
+                # host validation outside tracing and preserve all diagnostics.
+                p = validate_parameters(p)
+                if getattr(self, '_glacier_simulate_fn', None) is None:
+                    self._glacier_simulate_fn = jax.jit(
+                        simulate_glacier_core,
+                        static_argnames=('timestep_hours', 'use_jax'))
+                self._glacier_output, _ = self._glacier_simulate_fn(
+                    forcing['precip'], forcing['temp'], forcing['pet'],
+                    ds.area_km2.values, ds.glacier_fraction.values,
+                    ds.initial_ice_mm.values, p, self.timestep_hours, True)
+            else:
+                self._glacier_output, _ = simulate_glacier(
+                    forcing['precip'], forcing['temp'], forcing['pet'],
+                    ds.area_km2.values, ds.glacier_fraction.values, p,
+                    ds.initial_ice_mm.values, self.timestep_hours, False)
+            return np.asarray(self._glacier_output.runoff)
+
         # The k0 > k1 > k2 constraint is applied inside
         # jhbv.parameters.create_params_from_dict, which every simulation
         # path goes through — including the differentiable loss in
@@ -482,6 +529,9 @@ class HBVWorker(InMemoryModelWorker):
 
     def _initialize_model(self) -> bool:
         """Initialize HBV model components."""
+        if self._cfg('HBV_GLACIER_ENABLED', False):
+            self._use_jax = HAS_JAX and self._cfg('HBV_BACKEND', 'jax') == 'jax'
+            return True
         return self._ensure_simulate_fn()
 
     # =========================================================================
@@ -496,7 +546,17 @@ class HBVWorker(InMemoryModelWorker):
         Returns:
             True if JAX is available.
         """
-        return HAS_JAX and self._use_jax
+        return HAS_JAX and self._use_jax and not self._cfg('HBV_GLACIER_ENABLED', False)
+
+    def save_output_files(self, runoff, output_dir, time_index=None):
+        if not self._cfg('HBV_GLACIER_ENABLED', False):
+            return super().save_output_files(runoff, output_dir, time_index)
+        from jhbv.glacier_io import write_glacier_output
+        from pathlib import Path
+        return write_glacier_output(
+            Path(output_dir)/f"{self._cfg('DOMAIN_NAME', 'domain')}_hbv_output.nc",
+            self._glacier_dataset, self._glacier_output,
+            self.timestep_hours, time_index)
 
     def warmup_steps(self) -> int:
         """Warmup length in timesteps (HBV may run sub-daily)."""

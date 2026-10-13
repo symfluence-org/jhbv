@@ -102,6 +102,20 @@ class HBVPreProcessor(BaseModelPreProcessor, SpatialModeDetectionMixin):  # type
         """
         self.logger.info(f"Starting HBV preprocessing in {self.spatial_mode} mode")
 
+        if self._get_config_value(lambda: self.config.model.hbv.glacier_enabled,
+                                  default=False, dict_key='HBV_GLACIER_ENABLED'):
+            from .glacier_io import load_glacier_forcing
+            filename = self._get_config_value(
+                lambda: self.config.model.hbv.glacier_forcing_file,
+                default=None, dict_key='HBV_GLACIER_FORCING_FILE')
+            if not filename:
+                raise ValueError('Glacier mode requires explicit HRU forcing and geometry')
+            path = Path(filename)
+            if not path.is_absolute():
+                path = self.hbv_forcing_dir / path
+            load_glacier_forcing(path, self.timestep_hours)
+            return True
+
         # Create directories
         self.create_directories()
 
