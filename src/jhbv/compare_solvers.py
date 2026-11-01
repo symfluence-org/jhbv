@@ -21,10 +21,10 @@ Comparison Metrics:
 - Scaling behavior (how performance changes with simulation length)
 
 Usage:
-    python -m symfluence.models.hbv.compare_solvers
+    python -m jhbv.compare_solvers
 
 Or import and use programmatically:
-    from symfluence.models.hbv.compare_solvers import run_comparison
+    from jhbv.compare_solvers import run_comparison
     results = run_comparison(n_days=1000)
 """
 

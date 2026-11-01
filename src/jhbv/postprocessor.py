@@ -8,7 +8,7 @@ Extracts and processes HBV-96 model output for analysis and visualization.
 Uses StandardModelPostProcessor for minimal boilerplate.
 """
 
-from symfluence.models.base.standard_postprocessor import StandardModelPostProcessor
+from jhbv._symfluence_compat import StandardModelPostProcessor
 
 
 class HBVPostProcessor(StandardModelPostProcessor):

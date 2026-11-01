@@ -24,9 +24,9 @@ import pandas as pd
 
 from symfluence.core.constants import ModelDefaults
 from symfluence.core.mixins.project import resolve_data_subdir
+
+from jhbv._symfluence_compat import HAS_JAX, InMemoryModelWorker, WorkerTask
 from jhbv.time_utils import warmup_timesteps
-from symfluence.optimization.workers.base_worker import WorkerTask
-from symfluence.optimization.workers.inmemory_worker import HAS_JAX, InMemoryModelWorker
 
 # Lazy JAX import
 if HAS_JAX:
@@ -313,7 +313,7 @@ class HBVWorker(InMemoryModelWorker):
         Returns:
             Dictionary with 'kge', 'nse', 'n_points'
         """
-        from symfluence.evaluation.metrics import kge, nse
+        from jhbv._symfluence_compat import kge, nse
 
         try:
             # Get time index for filtering

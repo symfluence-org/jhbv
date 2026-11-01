@@ -16,11 +16,14 @@ import pandas as pd
 import xarray as xr
 
 from symfluence.core.constants import UnitConversion, UnitDetectionThresholds
-from symfluence.data.utils.netcdf_utils import create_netcdf_encoding
-from symfluence.models.base import BaseModelPreProcessor
-from symfluence.models.mixins import SpatialModeDetectionMixin
-from symfluence.models.spatial_modes import SpatialMode
-from symfluence.models.utilities import ForcingDataProcessor
+
+from jhbv._symfluence_compat import (
+    BaseModelPreProcessor,
+    ForcingDataProcessor,
+    SpatialMode,
+    SpatialModeDetectionMixin,
+    create_netcdf_encoding,
+)
 
 
 class HBVPreProcessor(BaseModelPreProcessor, SpatialModeDetectionMixin):  # type: ignore[misc]
@@ -752,7 +755,7 @@ class HBVPreProcessor(BaseModelPreProcessor, SpatialModeDetectionMixin):  # type
         time: pd.DatetimeIndex
     ) -> np.ndarray:
         """Calculate PET using Hamon method."""
-        from symfluence.models.mixins.pet_calculator import PETCalculatorMixin
+        from jhbv._symfluence_compat import PETCalculatorMixin
 
         self.logger.info("Calculating PET using Hamon method")
 
@@ -777,7 +780,7 @@ class HBVPreProcessor(BaseModelPreProcessor, SpatialModeDetectionMixin):  # type
         time: pd.DatetimeIndex
     ) -> np.ndarray:
         """Calculate PET using Thornthwaite method."""
-        from symfluence.models.mixins.pet_calculator import PETCalculatorMixin
+        from jhbv._symfluence_compat import PETCalculatorMixin
 
         self.logger.info("Calculating PET using Thornthwaite method")
         lat = self.latitude if self.latitude else 45.0

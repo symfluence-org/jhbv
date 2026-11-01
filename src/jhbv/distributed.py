@@ -25,8 +25,8 @@ Key Features:
 - Adaptive sub-timestep routing for stability
 
 Example:
-    >>> from symfluence.models.hbv.distributed import DistributedHBV
-    >>> from symfluence.models.hbv.network import create_synthetic_network
+    >>> from jhbv.distributed import DistributedHBV
+    >>> from jhbv.network import create_synthetic_network
     >>>
     >>> # Create network and model
     >>> network = create_synthetic_network(n_nodes=5, topology='fishbone')

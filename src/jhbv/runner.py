@@ -17,15 +17,22 @@ import pandas as pd
 import xarray as xr
 
 from symfluence.core.exceptions import ModelExecutionError, symfluence_error_handler
-from symfluence.data.utils.netcdf_utils import create_netcdf_encoding
-from symfluence.geospatial.geometry_utils import calculate_catchment_area_km2
-from symfluence.models.base import BaseModelRunner
-from symfluence.models.execution import SpatialOrchestrator
-from jhbv.time_utils import warmup_timesteps
-from symfluence.models.mixins import ObservationLoaderMixin, SpatialModeDetectionMixin
 from symfluence.models.mizuroute.mixins import MizuRouteConfigMixin
-from symfluence.models.spatial_modes import SpatialMode
-from symfluence.models.state import ModelState, StateCapableMixin, StateFormat, StateMetadata
+
+from jhbv._symfluence_compat import (
+    BaseModelRunner,
+    ModelState,
+    ObservationLoaderMixin,
+    SpatialMode,
+    SpatialModeDetectionMixin,
+    SpatialOrchestrator,
+    StateCapableMixin,
+    StateFormat,
+    StateMetadata,
+    calculate_catchment_area_km2,
+    create_netcdf_encoding,
+)
+from jhbv.time_utils import warmup_timesteps
 
 # Lazy JAX import
 try:
@@ -831,7 +838,7 @@ class HBVRunner(  # type: ignore[misc]
     def _calculate_and_log_metrics(self) -> None:
         """Calculate and log performance metrics."""
         try:
-            from symfluence.evaluation.metrics import kge, nse
+            from jhbv._symfluence_compat import kge, nse
 
             # Load simulation (now in m³/s)
             output_file = self.output_dir / f"{self.domain_name}_hbv_output.nc"

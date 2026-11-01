@@ -183,33 +183,29 @@ def __dir__():
 
 
 def register() -> None:
-    """Register HBV components with symfluence plugin registry."""
-    from symfluence.core.registry import model_manifest
-    from .calibration.optimizer import HBVModelOptimizer
-    from .calibration.parameter_manager import HBVParameterManager
-    from .calibration.worker import HBVWorker
-    from .config import HBVConfigAdapter
-    from .extractor import HBVResultExtractor
-    from .postprocessor import HBVPostProcessor, HBVRoutedPostProcessor
-    from .preprocessor import HBVPreProcessor
-    from .runner import HBVRunner
+    """Register HBV components with symfluence plugin registry.
 
-    model_manifest(
-        "HBV",
-        preprocessor=HBVPreProcessor,
-        runner=HBVRunner,
-        runner_method='run_hbv',
-        postprocessor=HBVPostProcessor,
-        config_adapter=HBVConfigAdapter,
-        result_extractor=HBVResultExtractor,
-        optimizer=HBVModelOptimizer,
-        worker=HBVWorker,
-        parameter_manager=HBVParameterManager,
+    Only the config adapter is imported here (model_manifest derives the
+    config schema from it). Execution and calibration classes are registered
+    lazily, so plugin discovery does not import JAX or the calibration stack;
+    they are imported on first registry access.
+    """
+    from symfluence.core.registries import Registries as R
+    from symfluence.core.registry import model_manifest
+    from .config import HBVConfigAdapter
+
+    model_manifest("HBV", config_adapter=HBVConfigAdapter)
+    base = __name__
+    R.preprocessors.add_lazy("HBV", f"{base}.preprocessor.HBVPreProcessor")
+    R.runners.add_lazy("HBV", f"{base}.runner.HBVRunner", runner_method='run_hbv')
+    R.postprocessors.add_lazy("HBV", f"{base}.postprocessor.HBVPostProcessor")
+    R.result_extractors.add_lazy("HBV", f"{base}.extractor.HBVResultExtractor")
+    R.optimizers.add_lazy("HBV", f"{base}.calibration.optimizer.HBVModelOptimizer")
+    R.workers.add_lazy("HBV", f"{base}.calibration.worker.HBVWorker")
+    R.parameter_managers.add_lazy(
+        "HBV", f"{base}.calibration.parameter_manager.HBVParameterManager"
     )
-    model_manifest(
-        "HBV_routed",
-        postprocessor=HBVRoutedPostProcessor,
-    )
+    R.postprocessors.add_lazy("HBV_routed", f"{base}.postprocessor.HBVRoutedPostProcessor")
 
 
 # Type hints for IDE support
