@@ -14,8 +14,7 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 
 from jhbv.model import DEFAULT_PARAMS, PARAM_BOUNDS
-from symfluence.optimization.core.base_parameter_manager import BaseParameterManager
-from symfluence.optimization.core.parameter_bounds_registry import get_hbv_bounds
+from jhbv._symfluence_compat import BaseParameterManager, get_hbv_bounds
 
 
 class HBVParameterManager(BaseParameterManager):
